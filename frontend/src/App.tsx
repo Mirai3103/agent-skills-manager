@@ -1,121 +1,80 @@
-import { useState, useEffect, useRef } from 'react'
-import {Events, WML} from "@wailsio/runtime";
-import {GreetService} from "../bindings/github.com/Mirai3103/agent-skills-manager";
+import { useEffect, useState, type FormEvent } from 'react'
+import { Events, WML } from '@wailsio/runtime'
+import { GreetService } from '../bindings/github.com/Mirai3103/agent-skills-manager'
 
-// Show the actual Wails version this project was generated against.
-const wailsVersion = "v3.0.0";
+const wailsVersion = 'v3.0.0'
 
-function App() {
-  const [name, setName] = useState<string>('');
-  const [time, setTime] = useState<string>('Listening for Time event...');
-
-  const titleNameRef = useRef<HTMLSpanElement | null>(null);
-  const toastRef = useRef<HTMLDivElement | null>(null);
-  const resultRef = useRef<HTMLSpanElement | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  // Crossfade the framework word in the heading ("Wails + React") to the name
-  // the user entered ("Wails + <name>"): the old word fades out while the new one
-  // fades in over the same spot.
-  const swapTitleName = (name: string) => {
-    const titleNameElement = titleNameRef.current;
-    if (!titleNameElement) {
-      return;
-    }
-    const current = titleNameElement.querySelector('.title-name-text:not(.is-outgoing)');
-    if (!current || current.textContent === name) {
-      return;
-    }
-    const incoming = document.createElement('span');
-    incoming.className = 'title-name-text is-entering';
-    incoming.textContent = name;
-    current.classList.add('is-outgoing');
-    titleNameElement.appendChild(incoming);
-    // Force a reflow so the transitions run from the starting state.
-    void incoming.offsetWidth;
-    incoming.classList.remove('is-entering');
-    current.classList.add('is-leaving');
-    current.addEventListener('transitionend', () => current.remove(), {once: true});
-  };
-
-  // Pop the toast with the message Go returned, then auto-dismiss it.
-  const showToast = (message: string) => {
-    if (resultRef.current) {
-      resultRef.current.innerText = message;
-    }
-    if (toastRef.current) {
-      toastRef.current.classList.add('is-visible');
-    }
-    clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => {
-      if (toastRef.current) {
-        toastRef.current.classList.remove('is-visible');
-      }
-    }, 4000);
-  };
-
-  const doGreet = () => {
-    let n = name || 'anonymous';
-    swapTitleName(n);
-    GreetService.Greet(n).then(showToast).catch(console.error);
-  };
+export default function App() {
+  const [name, setName] = useState('')
+  const [time, setTime] = useState('Listening for Time event...')
+  const [result, setResult] = useState('')
 
   useEffect(() => {
-    Events.On('time', (timeValue: any) => {
-      // On a narrow screen the full RFC1123 stamp is too wide for the footer, so
-      // show just the clock time there (matching the CSS breakpoint).
-      const full = timeValue.data;
-      const compact = (full.match(/\d{1,2}:\d{2}:\d{2}/) || [full])[0];
-      setTime(window.matchMedia('(max-width: 640px)').matches ? compact : full);
-    });
-    // Reload WML so it picks up the wml tags
-    WML.Reload();
-  }, []);
+    Events.On('time', (timeValue) => setTime(timeValue.data))
+    WML.Reload()
+  }, [])
+
+  const doGreet = (e: FormEvent) => {
+    e.preventDefault()
+    GreetService.Greet(name || 'anonymous').then(setResult).catch(console.error)
+  }
 
   return (
-    <>
-      <main className="container">
-        <header className="brand">
-          <a className="brand-mark" data-wml-openURL="https://v3.wails.io" aria-label="Wails website">
-            <img src="/wails.png" className="brand-logo" alt="Wails logo"/>
-          </a>
-          <a className="brand-badge" data-wml-openURL="https://reactjs.org" aria-label="React">
-            <img src="/react.svg" alt="React logo"/>
-          </a>
-        </header>
-
-        <h1 className="title"><span className="title-accent">Wails +</span> <span className="title-name" ref={titleNameRef}><span className="title-name-text">React</span></span></h1>
-        <p className="subtitle">Build beautiful cross-platform apps with Go and React.</p>
-
-        <div className="greet">
-          <div className="input-box">
-            <svg className="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            <input aria-label="input" className="input" value={name} onChange={(e) => setName(e.target.value)} type="text" placeholder="Your name" autoComplete="off"/>
-            <button aria-label="greet-btn" className="btn" onClick={doGreet}>Greet
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-            </button>
-          </div>
-        </div>
-      </main>
-
-      <hr className="footer-divider"/>
-      <footer className="footer">
-        <span className="footer-version"><span>{wailsVersion}</span></span>
-        <span className="footer-time">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          <span>{time}</span>
+    <main className="flex min-h-dvh flex-col items-center justify-center gap-6 p-10">
+      <h1 className="text-5xl font-extrabold tracking-tight">
+        Wails +{' '}
+        <span className="bg-gradient-to-r from-red-500 to-pink-500 bg-clip-text text-transparent">
+          {name || 'React'}
         </span>
-        <a className="footer-docs" data-wml-openURL="https://v3.wails.io" aria-label="Wails documentation">Docs
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
+      </h1>
+      <p className="max-w-md text-center text-neutral-400">
+        Build beautiful cross-platform apps with Go and React.
+      </p>
+
+      <form
+        onSubmit={doGreet}
+        className="flex w-full max-w-sm items-center gap-2 rounded-xl border border-white/15 bg-white/5 py-1 pr-1 pl-3 backdrop-blur [--wails-draggable:no-drag] focus-within:border-red-500/60"
+      >
+        <input
+          aria-label="input"
+          className="min-w-0 flex-1 bg-transparent text-base outline-none select-text placeholder:text-neutral-500"
+          placeholder="Your name"
+          autoComplete="off"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <button
+          type="submit"
+          aria-label="greet-btn"
+          className="rounded-lg bg-gradient-to-r from-red-500 to-pink-500 px-4 py-1.5 text-sm font-semibold text-white transition active:scale-95"
+        >
+          Greet
+        </button>
+      </form>
+
+      <footer className="fixed inset-x-0 bottom-0 flex items-center justify-between px-3 py-3 text-xs text-neutral-400">
+        <span>{wailsVersion}</span>
+        <span>{time}</span>
+        <a
+          href="https://v3.wails.io"
+          target="_blank"
+          rel="noreferrer"
+          className="transition hover:text-neutral-100 [--wails-draggable:no-drag]"
+        >
+          Docs
         </a>
       </footer>
 
-      <div className="toast" ref={toastRef} role="status" aria-live="polite">
-        <span className="toast-label">From Go</span>
-        <span aria-label="result" className="toast-msg" ref={resultRef}></span>
+      <div
+        role="status"
+        aria-live="polite"
+        className={`fixed top-4 right-4 max-w-xs rounded-xl border border-white/15 bg-neutral-900/80 px-4 py-2.5 text-sm backdrop-blur transition ${
+          result ? 'translate-y-0 opacity-100' : 'pointer-events-none -translate-y-4 opacity-0'
+        }`}
+      >
+        <span className="block text-[10px] font-bold tracking-widest text-neutral-400 uppercase">From Go</span>
+        <span aria-label="result" className="select-text">{result}</span>
       </div>
-    </>
+    </main>
   )
 }
-
-export default App
