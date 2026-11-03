@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: cross-platform-release-plan
+expected_outcome: |
+  RELEASE.md explains, for a Linux host: Windows builds via native Go cross-compilation (wails3 build/package GOOS=windows,
+  NSIS installer needs makensis); macOS needs the Docker cross image (wails3 task setup:docker) and universal/arm64+amd64
+  builds, .app/.dmg packaging; Linux AppImage/deb/rpm via wails3 package GOOS=linux; signing via wails3 setup/signing with
+  exported credentials (PFX for Windows, exported .p12 + App Store Connect API key for macOS notarization from Linux,
+  GPG for deb/rpm); and end-user Linux runtime deps for the default GTK4 build (gtk4 + webkitgtk-6.0), not the v2-era
+  webkit2gtk-4.0. No v2 commands (wails build -platform).

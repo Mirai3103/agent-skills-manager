@@ -1,0 +1,8 @@
+schema_version: "1.1"
+name: tray-clipboard-app
+expected_outcome: |
+  A new Wails v3 project named clipnest exists (scaffolded with wails3 init or equivalent), using the v3 manager API:
+  a system tray with a menu containing Show and Quit, a hidden-at-start window, a global shortcut (app.GlobalShortcut)
+  toggling the window, a goroutine/service polling app.Clipboard every second and emitting events, a WindowClosing hook
+  that hides instead of closing, quit-on-last-window disabled, and a vanilla TS frontend listening with Events.On and ev.data.
+  The Go code compiles (go build) and bindings are generated.

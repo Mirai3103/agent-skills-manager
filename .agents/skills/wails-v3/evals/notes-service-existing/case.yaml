@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: notes-service-existing
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  notesapp gains a NotesService registered via application.NewService, persisting JSON under a user config dir
+  (application.Path / os.UserConfigDir), with exported List/Get/Save/Delete methods; an Export flow using a native save
+  dialog (Go app.Dialog.SaveFile or JS Dialogs.SaveFile) that writes markdown; a confirm-on-close using a
+  WindowClosing hook + e.Cancel() + native question dialog, with the frontend reporting dirty state to Go. Bindings are
+  regenerated (frontend/bindings/github.com/laffy/notesapp/notesservice.ts exists), the React UI imports them, and both
+  go build and tsc --noEmit pass.
