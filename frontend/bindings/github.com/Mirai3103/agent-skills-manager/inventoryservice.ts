@@ -23,6 +23,14 @@ export function Adopt(name: string): $CancellablePromise<skills$0.AdoptResult> {
 }
 
 /**
+ * ChooseCanonical adopts one named loose copy as canonical and leaves every
+ * other copy exactly where it is. It only ever runs on an explicit user action.
+ */
+export function ChooseCanonical(name: string, chosen: string): $CancellablePromise<skills$0.AdoptResult> {
+    return $Call.ByID(3174429206, name, chosen);
+}
+
+/**
  * Scan returns the inventory of every skills root that exists under $HOME.
  */
 export function Scan(): $CancellablePromise<skills$0.Inventory> {

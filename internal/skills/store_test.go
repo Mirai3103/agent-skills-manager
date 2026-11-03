@@ -120,6 +120,167 @@ func TestAdoptRefusesVariantAndWritesNothing(t *testing.T) {
 	}
 }
 
+func TestChooseCanonicalAdoptsChosenCopyAndLeavesTheLoser(t *testing.T) {
+	home := fakeHome(t, "one/skills", "two/skills")
+	chosen := filepath.Join(home, "one/skills", "alpha")
+	loser := filepath.Join(home, "two/skills", "alpha")
+	losingSkill := alphaSkill + "\nlosing\n"
+	writeSkill(t, filepath.Join(home, "one/skills"), "alpha", alphaSkill)
+	writeSkill(t, filepath.Join(home, "two/skills"), "alpha", losingSkill)
+
+	if _, err := ChooseCanonical(home, "alpha", chosen, adaptersFor("one/skills", "two/skills")); err != nil {
+		t.Fatalf("ChooseCanonical: %v", err)
+	}
+
+	storeSkill := filepath.Join(StoreDir(home), "alpha")
+	if content, err := os.ReadFile(filepath.Join(storeSkill, "SKILL.md")); err != nil || string(content) != alphaSkill {
+		t.Errorf("store SKILL.md = %q, %v; want the chosen bytes", content, err)
+	}
+	mustRelativeLink(t, chosen)
+
+	// The losing copy is the user's to deal with: still a real directory, unchanged.
+	info, err := os.Lstat(loser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%s is no longer a real directory", loser)
+	}
+	if content, err := os.ReadFile(filepath.Join(loser, "SKILL.md")); err != nil || string(content) != losingSkill {
+		t.Errorf("losing SKILL.md = %q, %v; want it untouched", content, err)
+	}
+}
+
+func TestChooseCanonicalRefusesAPathThatIsNotALooseCopy(t *testing.T) {
+	home := fakeHome(t, "one/skills", "two/skills")
+	writeSkill(t, filepath.Join(home, "one/skills"), "alpha", alphaSkill)
+	writeSkill(t, filepath.Join(home, "two/skills"), "alpha", alphaSkill+"\nmore")
+
+	_, err := ChooseCanonical(home, "alpha", filepath.Join(home, "two/skills", "beta"), adaptersFor("one/skills", "two/skills"))
+	if err == nil {
+		t.Fatal("ChooseCanonical accepted a path that is not a copy")
+	}
+	if !strings.Contains(err.Error(), filepath.Join(home, "two/skills", "beta")) {
+		t.Errorf("error = %v, want the rejected path named", err)
+	}
+	if _, err := os.Stat(filepath.Join(StoreDir(home), "alpha")); !os.IsNotExist(err) {
+		t.Errorf("store entry exists after refused pick: %v", err)
+	}
+}
+
+func TestChooseCanonicalRefusesAReadOnlyChosenCopy(t *testing.T) {
+	home := fakeHome(t, "synced/acct", "one/skills")
+	chosen := filepath.Join(home, "synced/acct", "alpha")
+	writeSkill(t, filepath.Join(home, "synced/acct"), "alpha", alphaSkill)
+	writeSkill(t, filepath.Join(home, "one/skills"), "alpha", alphaSkill+"\nmore")
+	adapters := []Adapter{
+		{Agent: "A", Claims: []Claim{{Root: "synced/acct", Depth: 1, Linkable: false, Source: "test"}}},
+		{Agent: "B", Claims: []Claim{{Root: "one/skills", Depth: 1, Linkable: true, Source: "test"}}},
+	}
+
+	_, err := ChooseCanonical(home, "alpha", chosen, adapters)
+	if err == nil {
+		t.Fatal("ChooseCanonical accepted a read-only copy as canonical")
+	}
+	if !strings.Contains(err.Error(), "read-only") {
+		t.Errorf("error = %v, want the read-only root named", err)
+	}
+	if _, err := os.Stat(filepath.Join(StoreDir(home), "alpha")); !os.IsNotExist(err) {
+		t.Errorf("store entry exists after refused pick: %v", err)
+	}
+	if info, err := os.Lstat(chosen); err != nil || !info.IsDir() {
+		t.Errorf("read-only copy is no longer a real directory: %v", err)
+	}
+}
+
+func TestScanMarksTheLosingCopyAsConflict(t *testing.T) {
+	home := fakeHome(t, "one/skills", "two/skills")
+	chosen := filepath.Join(home, "one/skills", "alpha")
+	loser := filepath.Join(home, "two/skills", "alpha")
+	writeSkill(t, filepath.Join(home, "one/skills"), "alpha", alphaSkill)
+	writeSkill(t, filepath.Join(home, "two/skills"), "alpha", alphaSkill+"\nmore")
+	if _, err := ChooseCanonical(home, "alpha", chosen, adaptersFor("one/skills", "two/skills")); err != nil {
+		t.Fatalf("ChooseCanonical: %v", err)
+	}
+
+	skill := onlySkill(t, Scan(home, adaptersFor("one/skills", "two/skills")))
+
+	if skill.Status != StatusConflict {
+		t.Errorf("status = %q, want %q", skill.Status, StatusConflict)
+	}
+	if skill.Hash == "" || !skill.Stored {
+		t.Errorf("skill = %+v, want the store copy as the row's identity", skill)
+	}
+	if cell := skill.Cells[0]; cell.State != Enabled || cell.Conflict {
+		t.Errorf("chosen cell = %+v, want an enabled link with no conflict", cell)
+	}
+	losing := skill.Cells[1]
+	if losing.State != Loose || !losing.Conflict {
+		t.Errorf("losing cell = %+v, want a loose conflict", losing)
+	}
+	if losing.Path != loser {
+		t.Errorf("losing path = %q, want %q", losing.Path, loser)
+	}
+}
+
+func TestScanClearsTheConflictOnceTheLosingCopyIsGone(t *testing.T) {
+	home := fakeHome(t, "one/skills", "two/skills")
+	chosen := filepath.Join(home, "one/skills", "alpha")
+	loser := filepath.Join(home, "two/skills", "alpha")
+	writeSkill(t, filepath.Join(home, "one/skills"), "alpha", alphaSkill)
+	writeSkill(t, filepath.Join(home, "two/skills"), "alpha", alphaSkill+"\nmore")
+	if _, err := ChooseCanonical(home, "alpha", chosen, adaptersFor("one/skills", "two/skills")); err != nil {
+		t.Fatalf("ChooseCanonical: %v", err)
+	}
+	if err := os.RemoveAll(loser); err != nil {
+		t.Fatal(err)
+	}
+
+	skill := onlySkill(t, Scan(home, adaptersFor("one/skills", "two/skills")))
+
+	if skill.Status == StatusConflict || skill.Status == StatusVariant {
+		t.Errorf("status = %q, want the conflict cleared", skill.Status)
+	}
+	for i, cell := range skill.Cells {
+		if cell.Conflict {
+			t.Errorf("cell %d still conflicts: %+v", i, cell)
+		}
+	}
+	if skill.Cells[0].State != Enabled || skill.Cells[1].State != Absent {
+		t.Errorf("cells = %+v, want enabled then absent", skill.Cells)
+	}
+}
+
+func TestAdoptRefusesWhileADifferingCopyExists(t *testing.T) {
+	home := fakeHome(t, "one/skills", "two/skills")
+	writeSkill(t, StoreDir(home), "alpha", alphaSkill)
+	loose := filepath.Join(home, "one/skills", "alpha")
+	writeSkill(t, filepath.Join(home, "one/skills"), "alpha", alphaSkill)
+	// A differing copy the user enabled by hand: a link is not loose, so the
+	// loose-copy preflight alone would miss it.
+	writeSkill(t, filepath.Join(home, "elsewhere"), "alpha", alphaSkill+"\nmore\n")
+	link := filepath.Join(home, "two/skills", "alpha")
+	rel, err := filepath.Rel(filepath.Dir(link), filepath.Join(home, "elsewhere", "alpha"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(rel, link); err != nil {
+		t.Fatal(err)
+	}
+
+	skill := onlySkill(t, Scan(home, adaptersFor("one/skills", "two/skills")))
+	if skill.Status != StatusConflict {
+		t.Fatalf("status = %q, want %q", skill.Status, StatusConflict)
+	}
+
+	if _, err := Adopt(home, "alpha", adaptersFor("one/skills", "two/skills")); err == nil {
+		t.Fatal("Adopt succeeded while a differing copy exists")
+	}
+	if info, err := os.Lstat(loose); err != nil || !info.IsDir() {
+		t.Errorf("loose copy changed by a refused adopt: %v", err)
+	}
+}
+
 func TestAdoptRefusesUnlinkableRoot(t *testing.T) {
 	home := fakeHome(t, "synced/acct", "one/skills")
 	writeSkill(t, filepath.Join(home, "synced/acct"), "alpha", alphaSkill)

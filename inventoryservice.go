@@ -24,3 +24,9 @@ func (s *InventoryService) Scan() skills.Inventory {
 func (s *InventoryService) Adopt(name string) (skills.AdoptResult, error) {
 	return skills.Adopt(s.home, name, skills.DefaultAdapters())
 }
+
+// ChooseCanonical adopts one named loose copy as canonical and leaves every
+// other copy exactly where it is. It only ever runs on an explicit user action.
+func (s *InventoryService) ChooseCanonical(name, chosen string) (skills.AdoptResult, error) {
+	return skills.ChooseCanonical(s.home, name, chosen, skills.DefaultAdapters())
+}

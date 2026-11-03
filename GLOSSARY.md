@@ -40,7 +40,11 @@ Two or more skills in different roots whose `SKILL.md` byte hash is equal. Dupli
 
 ## Variant
 
-Two or more skills in different roots sharing a folder name but differing in `SKILL.md` hash. The *Skill store* is not a root: a store copy that differs from the roots is a conflict shown as a warning, not a Variant. Not safe to collapse — a human decides which one is canonical.
+Two or more skills in different roots sharing a folder name but differing in `SKILL.md` hash. The *Skill store* is not a root: a root copy that differs from the store copy is a *Conflict*, not a Variant. Not safe to collapse — a human decides which one is canonical.
+
+## Conflict
+
+A column's copy whose `SKILL.md` differs from the store copy after the canonical pick. The app shows the path and never touches it: the user removes it by hand, and a *Scan* clears the conflict.
 
 ## Adapter
 

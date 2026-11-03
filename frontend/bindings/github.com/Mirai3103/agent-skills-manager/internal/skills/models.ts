@@ -16,6 +16,12 @@ export interface Cell {
     "root": string;
     "state": State;
     "path": string;
+
+    /**
+     * Conflict marks a copy whose SKILL.md differs from the store copy, so the
+     * UI can show the path the user has to deal with by hand.
+     */
+    "conflict": boolean;
 }
 
 /**
@@ -38,7 +44,8 @@ export interface Root {
 }
 
 /**
- * RootError reports one unreadable root without failing the whole scan.
+ * RootError reports one unreadable root (or the store) without failing the
+ * whole scan.
  */
 export interface RootError {
     "root": string;
@@ -117,4 +124,10 @@ export enum Status {
      * a link whose target is gone
      */
     StatusOrphan = "orphan",
+
+    /**
+     * StatusConflict means a column still holds a copy that differs from the
+     * store copy: the user has to deal with that path themselves.
+     */
+    StatusConflict = "conflict",
 };

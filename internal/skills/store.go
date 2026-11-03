@@ -35,8 +35,8 @@ type AdoptResult struct {
 // relative Link into the store. A Variant, an unlinkable root, or a failed
 // write rolls the roots back and leaves every original as it was.
 func Adopt(home, name string, adapters []Adapter) (AdoptResult, error) {
-	if name == "" || filepath.Base(name) != name || name == "." || name == ".." {
-		return AdoptResult{}, fmt.Errorf("invalid skill name %q", name)
+	if err := checkName(name); err != nil {
+		return AdoptResult{}, err
 	}
 
 	inv := Scan(home, adapters)
@@ -46,6 +46,11 @@ func Adopt(home, name string, adapters []Adapter) (AdoptResult, error) {
 	}
 	if skill.Status == StatusVariant {
 		return AdoptResult{}, fmt.Errorf("cannot adopt %q: variants exist, pick the canonical copy first", name)
+	}
+	for _, cell := range skill.Cells {
+		if cell.Conflict {
+			return AdoptResult{}, fmt.Errorf("cannot adopt %q: a column still holds a differing copy; resolve the copies by hand first", name)
+		}
 	}
 
 	// Pre-flight every write, so a refusal happens before anything changes.
@@ -57,13 +62,56 @@ func Adopt(home, name string, adapters []Adapter) (AdoptResult, error) {
 		if !inv.Roots[i].Linkable {
 			return AdoptResult{}, fmt.Errorf("cannot adopt %q: %s is a read-only root", name, inv.Roots[i].Label)
 		}
-		if _, err := os.Lstat(cell.Path + adoptOldSuffix); err == nil {
-			return AdoptResult{}, fmt.Errorf("cannot adopt %q: %s already exists", name, cell.Path+adoptOldSuffix)
-		}
 		originals = append(originals, cell.Path)
 	}
 	if len(originals) == 0 {
 		return AdoptResult{}, fmt.Errorf("cannot adopt %q: it is not loose in any root", name)
+	}
+	return adoptCopies(home, name, originals)
+}
+
+// ChooseCanonical adopts one copy of a Variant as the canonical one, the pick a
+// plain Adopt refuses to make. Only the chosen copy is replaced by a Link; every
+// other copy is left exactly where it is, still readable by every agent that
+// reads its root, and keeps showing on its column as a conflict until the user
+// removes it by hand.
+func ChooseCanonical(home, name, chosen string, adapters []Adapter) (AdoptResult, error) {
+	if err := checkName(name); err != nil {
+		return AdoptResult{}, err
+	}
+
+	inv := Scan(home, adapters)
+	skill, ok := findSkill(inv, name)
+	if !ok {
+		return AdoptResult{}, fmt.Errorf("no skill named %q", name)
+	}
+	for i, cell := range skill.Cells {
+		if cell.State != Loose || cell.Path != chosen {
+			continue
+		}
+		if !inv.Roots[i].Linkable {
+			return AdoptResult{}, fmt.Errorf("cannot make %q canonical: %s is a read-only root", name, inv.Roots[i].Label)
+		}
+		return adoptCopies(home, name, []string{chosen})
+	}
+	return AdoptResult{}, fmt.Errorf("cannot make %q canonical: %s is not a loose copy", name, chosen)
+}
+
+func checkName(name string) error {
+	if name == "" || filepath.Base(name) != name || name == "." || name == ".." {
+		return fmt.Errorf("invalid skill name %q", name)
+	}
+	return nil
+}
+
+// adoptCopies copies the first original into the Store, verifies the copy, then
+// replaces every listed original with a relative Link. Originals not listed are
+// never touched.
+func adoptCopies(home, name string, originals []string) (AdoptResult, error) {
+	for _, original := range originals {
+		if _, err := os.Lstat(original + adoptOldSuffix); err == nil {
+			return AdoptResult{}, fmt.Errorf("cannot adopt %q: %s already exists", name, original+adoptOldSuffix)
+		}
 	}
 
 	// Every original holds the row's single hash, so any of them is a valid source.

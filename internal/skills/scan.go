@@ -217,7 +217,7 @@ func buildSkills(entries []entry, rootCount int) []Skill {
 	type row struct {
 		cells     []Cell
 		hashes    map[string]struct{}
-		roots     map[int]struct{} // roots already holding a copy
+		rootHash  map[int]string // hash of the copy in each root; presence means the root has a cell
 		warning   string
 		stored    bool
 		storeHash string
@@ -229,9 +229,9 @@ func buildSkills(entries []entry, rootCount int) []Skill {
 		r, ok := rows[e.name]
 		if !ok {
 			r = &row{
-				cells:  make([]Cell, rootCount),
-				hashes: make(map[string]struct{}),
-				roots:  make(map[int]struct{}),
+				cells:    make([]Cell, rootCount),
+				hashes:   make(map[string]struct{}),
+				rootHash: make(map[int]string),
 			}
 			for i := range r.cells {
 				r.cells[i] = Cell{State: Absent}
@@ -242,8 +242,8 @@ func buildSkills(entries []entry, rootCount int) []Skill {
 		if r.warning == "" && e.fmName != "" && e.fmName != e.name {
 			r.warning = `frontmatter name "` + e.fmName + `" differs from folder name "` + e.name + `"`
 		}
-		// The store is not a root: its hash never makes a row a Variant, which
-		// means "the roots disagree". A store conflict surfaces as a warning.
+		// The store is not a root: it is the canonical copy, so a root that
+		// differs from it is a conflict, never a Variant.
 		if e.stored {
 			r.stored = true
 			r.storeHash = e.hash
@@ -255,10 +255,10 @@ func buildSkills(entries []entry, rootCount int) []Skill {
 		// shortcut: one cell per root, so a name held twice under the depth-2
 		// root shows its first copy; split cells per account when a real root
 		// needs both.
-		if _, taken := r.roots[e.root]; taken {
+		if _, taken := r.rootHash[e.root]; taken {
 			continue
 		}
-		r.roots[e.root] = struct{}{}
+		r.rootHash[e.root] = e.hash
 		r.cells[e.root] = Cell{State: e.state, Path: e.path}
 	}
 
@@ -267,25 +267,39 @@ func buildSkills(entries []entry, rootCount int) []Skill {
 	for _, name := range names {
 		r := rows[name]
 		skill := Skill{Name: name, Status: StatusSingle, Stored: r.stored, Warning: r.warning, Cells: r.cells}
+
+		conflict := false
+		if r.stored {
+			for i := range skill.Cells {
+				if hash := r.rootHash[i]; hash != "" && hash != r.storeHash {
+					skill.Cells[i].Conflict = true
+					conflict = true
+				}
+			}
+		}
+
 		switch {
+		case r.stored:
+			// The store copy is the row's identity; a conflicting root keeps
+			// its own hash on its cell only.
+			skill.Hash = r.storeHash
+			if conflict && skill.Warning == "" {
+				skill.Warning = "the store copy differs from the skills roots; resolve the copies by hand"
+			}
 		case len(r.hashes) == 1:
 			for hash := range r.hashes {
 				skill.Hash = hash
 			}
-			if r.storeHash != "" && r.storeHash != skill.Hash && skill.Warning == "" {
-				skill.Warning = "the store copy differs from the skills roots; resolve the copies by hand"
-			}
-		case len(r.hashes) == 0:
-			// Store-only rows carry the store copy's hash.
-			skill.Hash = r.storeHash
 		}
 
 		switch {
 		case hasState(r.cells, Orphan):
 			skill.Status = StatusOrphan
+		case conflict:
+			skill.Status = StatusConflict
 		case len(r.hashes) > 1:
 			skill.Status = StatusVariant
-		case len(r.roots) > 1:
+		case len(r.rootHash) > 1:
 			skill.Status = StatusDuplicate
 		}
 		skills = append(skills, skill)

@@ -4,6 +4,7 @@ import { InventoryService } from '../bindings/github.com/Mirai3103/agent-skills-
 import {
   State,
   Status,
+  type Cell,
   type Inventory,
   type Root,
   type Skill,
@@ -39,12 +40,13 @@ export default function App() {
     }
   }, [])
 
-  const adopt = useCallback(
-    async (name: string) => {
+  // runAdopt runs one adopt-shaped write, then rescans whatever happened.
+  const runAdopt = useCallback(
+    async (name: string, action: () => Promise<unknown>) => {
       setAdopting(name)
       setAdoptError(null)
       try {
-        await InventoryService.Adopt(name)
+        await action()
       } catch (err) {
         setAdoptError(`${name}: ${err instanceof Error ? err.message : String(err)}`)
       } finally {
@@ -169,7 +171,7 @@ export default function App() {
                         skill={skill}
                         roots={roots}
                         adopting={adopting}
-                        onAdopt={adopt}
+                        onAdopt={(name) => void runAdopt(name, () => InventoryService.Adopt(name))}
                       />
                     </TableHead>
                     {roots.map((root, index) => (
@@ -180,7 +182,15 @@ export default function App() {
                           !root.linkable && 'bg-muted/50',
                         )}
                       >
-                        <StateGlyph cell={skill.cells?.[index]} root={root} skill={skill} />
+                        <StateGlyph
+                          cell={skill.cells?.[index]}
+                          root={root}
+                          skill={skill}
+                          adopting={adopting}
+                          onChoose={(name, path) =>
+                            void runAdopt(name, () => InventoryService.ChooseCanonical(name, path))
+                          }
+                        />
                       </TableCell>
                     ))}
                     <TableCell>
@@ -237,7 +247,10 @@ function AdoptControl({
 // adoptBlocker disables the obvious refusals; the backend remains the authority.
 function adoptBlocker(skill: Skill, roots: Root[]): string | null {
   if (skill.status === Status.StatusVariant) {
-    return 'Pick the canonical copy before adopting'
+    return 'Pick the canonical copy in its column'
+  }
+  if ((skill.cells ?? []).some((cell) => cell.conflict)) {
+    return 'Remove the conflicting copy by hand, then rescan'
   }
   const inReadOnlyRoot = (skill.cells ?? []).some(
     (cell, index) => cell.state === State.Loose && !roots[index]?.linkable,
@@ -249,37 +262,73 @@ function StateGlyph({
   cell,
   root,
   skill,
+  adopting,
+  onChoose,
 }: {
-  cell: { state: State; path: string } | undefined
+  cell: Cell | undefined
   root: Root
   skill: Skill
+  adopting: string | null
+  onChoose: (name: string, path: string) => void
 }) {
   const state = cell?.state ?? State.Absent
-  const name = `${skill.name} at ${root.label}: ${stateLabel(state)}${root.linkable ? '' : ', read-only root'}`
+  const conflict = cell?.conflict === true
+  const name = conflict
+    ? `${skill.name} at ${root.label}: conflicting copy at ${cell?.path}`
+    : `${skill.name} at ${root.label}: ${stateLabel(state)}${root.linkable ? '' : ', read-only root'}`
+  const chooseable = skill.status === Status.StatusVariant && state === State.Loose && root.linkable && cell?.path
 
   return (
-    <span
-      className="inline-flex size-5 items-center justify-center"
-      title={cell?.path || undefined}
-      data-state={state}
-    >
-      <span aria-hidden="true">
-        {state === State.Enabled && (
-          <span className="grid size-4 place-items-center bg-primary text-primary-foreground">
-            <Check className="size-3" strokeWidth={3} />
-          </span>
-        )}
-        {state === State.Loose && (
-          <span className="block size-2.5 rotate-45 border border-foreground/70" />
-        )}
-        {state === State.Absent && <span className="block h-px w-3 bg-border" />}
-        {state === State.Orphan && (
-          <span className="grid size-4 place-items-center border border-dashed border-destructive text-destructive">
-            <Link2Off className="size-2.5" />
-          </span>
-        )}
+    <span className="inline-flex flex-col items-center">
+      <span
+        className="inline-flex size-5 items-center justify-center"
+        title={cell?.path || undefined}
+        data-state={state}
+        data-conflict={conflict || undefined}
+      >
+        <span aria-hidden="true">
+          {conflict ? (
+            <span className="grid size-4 place-items-center border border-destructive text-destructive">
+              <AlertTriangle className="size-2.5" />
+            </span>
+          ) : (
+            <>
+              {state === State.Enabled && (
+                <span className="grid size-4 place-items-center bg-primary text-primary-foreground">
+                  <Check className="size-3" strokeWidth={3} />
+                </span>
+              )}
+              {state === State.Loose && (
+                <span className="block size-2.5 rotate-45 border border-foreground/70" />
+              )}
+              {state === State.Absent && <span className="block h-px w-3 bg-border" />}
+              {state === State.Orphan && (
+                <span className="grid size-4 place-items-center border border-dashed border-destructive text-destructive">
+                  <Link2Off className="size-2.5" />
+                </span>
+              )}
+            </>
+          )}
+        </span>
+        <span className="sr-only">{name}</span>
       </span>
-      <span className="sr-only">{name}</span>
+      {conflict && (
+        <span className="mt-1 block max-w-36 break-all font-mono text-[9px] leading-tight text-destructive">
+          {cell?.path}
+        </span>
+      )}
+      {chooseable && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-1 h-6 px-2 text-[10px]"
+          disabled={adopting !== null}
+          onClick={() => onChoose(skill.name, cell.path)}
+        >
+          Use this copy
+          <span className="sr-only"> at {root.label} as canonical for {skill.name}</span>
+        </Button>
+      )}
     </span>
   )
 }
@@ -292,6 +341,8 @@ function StatusBadge({ status }: { status: Status }) {
       return <Badge variant="secondary">duplicate</Badge>
     case Status.StatusOrphan:
       return <Badge variant="destructive">orphan link</Badge>
+    case Status.StatusConflict:
+      return <Badge variant="destructive">conflict</Badge>
     default:
       return <span className="text-muted-foreground">—</span>
   }

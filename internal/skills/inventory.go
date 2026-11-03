@@ -22,6 +22,9 @@ const (
 	StatusDuplicate Status = "duplicate" // identical hash in more than one root
 	StatusVariant   Status = "variant"   // same name, different hashes
 	StatusOrphan    Status = "orphan"    // a link whose target is gone
+	// StatusConflict means a column still holds a copy that differs from the
+	// store copy: the user has to deal with that path themselves.
+	StatusConflict Status = "conflict"
 )
 
 // Root is a skills root: the toggleable unit, not the agent (ADR-0004).
@@ -37,6 +40,9 @@ type Cell struct {
 	Root  string `json:"root"`
 	State State  `json:"state"`
 	Path  string `json:"path"`
+	// Conflict marks a copy whose SKILL.md differs from the store copy, so the
+	// UI can show the path the user has to deal with by hand.
+	Conflict bool `json:"conflict"`
 }
 
 // Skill is one row of the matrix.
