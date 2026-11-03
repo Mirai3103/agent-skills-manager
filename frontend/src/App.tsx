@@ -1,80 +1,261 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { Events, WML } from '@wailsio/runtime'
-import { GreetService } from '../bindings/github.com/Mirai3103/agent-skills-manager'
-
-const wailsVersion = 'v3.0.0'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { AlertTriangle, Check, Link2Off, Lock, RefreshCw } from 'lucide-react'
+import { InventoryService } from '../bindings/github.com/Mirai3103/agent-skills-manager'
+import {
+  State,
+  Status,
+  type Inventory,
+  type Root,
+  type Skill,
+} from '../bindings/github.com/Mirai3103/agent-skills-manager/internal/skills/models'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { cn } from '@/lib/utils'
 
 export default function App() {
-  const [name, setName] = useState('')
-  const [time, setTime] = useState('Listening for Time event...')
-  const [result, setResult] = useState('')
+  const [inventory, setInventory] = useState<Inventory | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [scanError, setScanError] = useState<string | null>(null)
 
-  useEffect(() => {
-    Events.On('time', (timeValue) => setTime(timeValue.data))
-    WML.Reload()
+  const scan = useCallback(async () => {
+    setLoading(true)
+    try {
+      setInventory(await InventoryService.Scan())
+      setScanError(null)
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  const doGreet = (e: FormEvent) => {
-    e.preventDefault()
-    GreetService.Greet(name || 'anonymous').then(setResult).catch(console.error)
-  }
+  useEffect(() => {
+    void scan()
+  }, [scan])
+
+  const roots = inventory?.roots ?? []
+  const skills = inventory?.skills ?? []
+  const rootErrors = inventory?.errors ?? []
 
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-6 p-10">
-      <h1 className="text-5xl font-extrabold tracking-tight">
-        Wails +{' '}
-        <span className="bg-gradient-to-r from-red-500 to-pink-500 bg-clip-text text-transparent">
-          {name || 'React'}
-        </span>
-      </h1>
-      <p className="max-w-md text-center text-neutral-400">
-        Build beautiful cross-platform apps with Go and React.
-      </p>
-
-      <form
-        onSubmit={doGreet}
-        className="flex w-full max-w-sm items-center gap-2 rounded-xl border border-white/15 bg-white/5 py-1 pr-1 pl-3 backdrop-blur [--wails-draggable:no-drag] focus-within:border-red-500/60"
-      >
-        <input
-          aria-label="input"
-          className="min-w-0 flex-1 bg-transparent text-base outline-none select-text placeholder:text-neutral-500"
-          placeholder="Your name"
-          autoComplete="off"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <button
-          type="submit"
-          aria-label="greet-btn"
-          className="rounded-lg bg-gradient-to-r from-red-500 to-pink-500 px-4 py-1.5 text-sm font-semibold text-white transition active:scale-95"
+    <main className="flex min-h-dvh flex-col bg-background text-foreground">
+      <header className="flex items-center justify-between gap-4 border-b px-6 py-4 [--wails-draggable:drag]">
+        <div>
+          <h1 className="text-base font-semibold tracking-tight">Skills matrix</h1>
+          <p className="text-xs text-muted-foreground">
+            {skills.length} skills · {roots.length} skills roots
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void scan()}
+          disabled={loading}
+          aria-busy={loading}
+          className="[--wails-draggable:no-drag]"
         >
-          Greet
-        </button>
-      </form>
+          <RefreshCw className={cn(loading && 'animate-spin')} />
+          {loading ? 'Scanning…' : 'Rescan'}
+        </Button>
+      </header>
 
-      <footer className="fixed inset-x-0 bottom-0 flex items-center justify-between px-3 py-3 text-xs text-neutral-400">
-        <span>{wailsVersion}</span>
-        <span>{time}</span>
-        <a
-          href="https://v3.wails.io"
-          target="_blank"
-          rel="noreferrer"
-          className="transition hover:text-neutral-100 [--wails-draggable:no-drag]"
-        >
-          Docs
-        </a>
-      </footer>
+      <div className="flex flex-1 flex-col gap-3 px-6 py-4">
+        {scanError && (
+          <Banner tone="error" title="Scan failed">
+            {scanError}
+          </Banner>
+        )}
+        {rootErrors.length > 0 && (
+          <Banner tone="warning" title="Some roots could not be read">
+            <ul className="list-inside list-disc">
+              {rootErrors.map((rootError) => (
+                <li key={rootError.root}>
+                  <span className="font-mono">{rootError.root}</span> — {rootError.err}
+                </li>
+              ))}
+            </ul>
+          </Banner>
+        )}
 
-      <div
-        role="status"
-        aria-live="polite"
-        className={`fixed top-4 right-4 max-w-xs rounded-xl border border-white/15 bg-neutral-900/80 px-4 py-2.5 text-sm backdrop-blur transition ${
-          result ? 'translate-y-0 opacity-100' : 'pointer-events-none -translate-y-4 opacity-0'
-        }`}
-      >
-        <span className="block text-[10px] font-bold tracking-widest text-neutral-400 uppercase">From Go</span>
-        <span aria-label="result" className="select-text">{result}</span>
+        {!inventory ? (
+          <p className="py-12 text-center text-sm text-muted-foreground" role="status">
+            {loading ? 'Scanning skills roots…' : 'Nothing scanned yet.'}
+          </p>
+        ) : roots.length === 0 ? (
+          <p className="py-12 text-center text-sm text-muted-foreground" role="status">
+            No skills roots found under your home directory.
+          </p>
+        ) : (
+          <div className="overflow-x-auto border">
+            <Table aria-busy={loading} className={cn(loading && 'opacity-60')}>
+              <TableHeader>
+                <TableRow>
+                  <TableHead scope="col" className="min-w-44">
+                    Skill
+                  </TableHead>
+                  {roots.map((root) => (
+                    <TableHead key={root.path} scope="col" className="min-w-32 align-top">
+                      <span className="font-mono text-xs">{root.label}</span>
+                      <span className="mt-0.5 block whitespace-normal text-[10px] leading-tight font-normal text-muted-foreground">
+                        {(root.readers ?? []).join(', ')}
+                      </span>
+                      {!root.linkable && (
+                        <Badge variant="outline" className="mt-1 gap-1 text-[10px]">
+                          <Lock aria-hidden="true" />
+                          read-only
+                        </Badge>
+                      )}
+                    </TableHead>
+                  ))}
+                  <TableHead scope="col" className="min-w-24">
+                    Status
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {skills.map((skill) => (
+                  <TableRow key={skill.name}>
+                    <TableHead scope="row" className="align-top whitespace-normal">
+                      <span className="text-xs font-medium">{skill.name}</span>
+                      {skill.hash && (
+                        <span className="block font-mono text-[10px] font-normal text-muted-foreground">
+                          {skill.hash.slice(0, 8)}
+                        </span>
+                      )}
+                      {skill.warning && (
+                        <span className="mt-1 flex items-start gap-1 text-[10px] leading-tight font-normal text-destructive">
+                          <AlertTriangle aria-hidden="true" className="mt-px size-3 shrink-0" />
+                          {skill.warning}
+                        </span>
+                      )}
+                    </TableHead>
+                    {roots.map((root, index) => (
+                      <TableCell
+                        key={root.path}
+                        className={cn(
+                          'text-center',
+                          !root.linkable && 'bg-muted/50',
+                        )}
+                      >
+                        <StateGlyph cell={skill.cells?.[index]} root={root} skill={skill} />
+                      </TableCell>
+                    ))}
+                    <TableCell>
+                      <StatusBadge status={skill.status} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {skills.length === 0 && (
+              <p className="py-8 text-center text-sm text-muted-foreground" role="status">
+                No skills found in the detected roots.
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </main>
+  )
+}
+
+function StateGlyph({
+  cell,
+  root,
+  skill,
+}: {
+  cell: { state: State; path: string } | undefined
+  root: Root
+  skill: Skill
+}) {
+  const state = cell?.state ?? State.Absent
+  const name = `${skill.name} at ${root.label}: ${stateLabel(state)}${root.linkable ? '' : ', read-only root'}`
+
+  return (
+    <span
+      className="inline-flex size-5 items-center justify-center"
+      title={cell?.path || undefined}
+      data-state={state}
+    >
+      <span aria-hidden="true">
+        {state === State.Enabled && (
+          <span className="grid size-4 place-items-center bg-primary text-primary-foreground">
+            <Check className="size-3" strokeWidth={3} />
+          </span>
+        )}
+        {state === State.Loose && (
+          <span className="block size-2.5 rotate-45 border border-foreground/70" />
+        )}
+        {state === State.Absent && <span className="block h-px w-3 bg-border" />}
+        {state === State.Orphan && (
+          <span className="grid size-4 place-items-center border border-dashed border-destructive text-destructive">
+            <Link2Off className="size-2.5" />
+          </span>
+        )}
+      </span>
+      <span className="sr-only">{name}</span>
+    </span>
+  )
+}
+
+function StatusBadge({ status }: { status: Status }) {
+  switch (status) {
+    case Status.StatusVariant:
+      return <Badge variant="destructive">variant</Badge>
+    case Status.StatusDuplicate:
+      return <Badge variant="secondary">duplicate</Badge>
+    case Status.StatusOrphan:
+      return <Badge variant="destructive">orphan link</Badge>
+    default:
+      return <span className="text-muted-foreground">—</span>
+  }
+}
+
+function stateLabel(state: State): string {
+  switch (state) {
+    case State.Enabled:
+      return 'enabled'
+    case State.Loose:
+      return 'loose'
+    case State.Orphan:
+      return 'orphan link'
+    default:
+      return 'absent'
+  }
+}
+
+function Banner({
+  tone,
+  title,
+  children,
+}: {
+  tone: 'warning' | 'error'
+  title: string
+  children: ReactNode
+}) {
+  return (
+    <div
+      role="alert"
+      className={cn(
+        'flex gap-2 border px-3 py-2 text-xs',
+        tone === 'error'
+          ? 'border-destructive/40 bg-destructive/10 text-destructive'
+          : 'border-border bg-muted/60',
+      )}
+    >
+      <AlertTriangle aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+      <div className="space-y-1">
+        <p className="font-medium">{title}</p>
+        <div className="text-muted-foreground">{children}</div>
+      </div>
+    </div>
   )
 }
