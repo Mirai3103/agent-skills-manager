@@ -27,6 +27,9 @@ export default function App() {
   const [scanError, setScanError] = useState<string | null>(null)
   const [adopting, setAdopting] = useState<string | null>(null)
   const [adoptError, setAdoptError] = useState<string | null>(null)
+  const [linking, setLinking] = useState<string | null>(null)
+  const [linkError, setLinkError] = useState<string | null>(null)
+  const [pendingLink, setPendingLink] = useState<PendingLink | null>(null)
 
   const scan = useCallback(async () => {
     setLoading(true)
@@ -53,6 +56,40 @@ export default function App() {
         setAdopting(null)
         // Rescan either way: a reported failure may still have changed disk.
         await scan()
+      }
+    },
+    [scan],
+  )
+
+  // runLink performs one enable/disable. An unconfirmed call that returns
+  // warnings stops at the banner; Proceed repeats it with confirm=true.
+  const runLink = useCallback(
+    async (action: LinkAction, name: string, root: Root, confirm = false) => {
+      setLinking(linkKey(action, name, root))
+      setLinkError(null)
+      setPendingLink(null)
+      try {
+        const result =
+          action === 'enable'
+            ? await InventoryService.Enable(name, root.path, confirm)
+            : await InventoryService.Disable(name, root.path, confirm)
+        const warnings = result.warnings ?? []
+        if (warnings.length > 0 && !confirm) {
+          setPendingLink({ action, skill: name, root, warnings })
+          return
+        }
+        setPendingLink(null)
+        await scan()
+      } catch (err) {
+        setLinkError(
+          `${action === 'enable' ? 'Enable' : 'Disable'} ${name} at ${root.label}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        )
+        // A refused write changes nothing, but a rescan keeps the matrix honest.
+        await scan()
+      } finally {
+        setLinking(null)
       }
     },
     [scan],
@@ -97,6 +134,44 @@ export default function App() {
         {adoptError && (
           <Banner tone="error" title="Adopt failed">
             {adoptError}
+          </Banner>
+        )}
+        {linkError && (
+          <Banner tone="error" title="Link change failed">
+            {linkError}
+          </Banner>
+        )}
+        {pendingLink && (
+          <Banner
+            tone="warning"
+            title={`${pendingLink.action === 'enable' ? 'Enable' : 'Disable'} ${
+              pendingLink.skill
+            } at ${pendingLink.root.label}?`}
+          >
+            <ul className="list-inside list-disc">
+              {pendingLink.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+            <div className="mt-2 flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={linking !== null}
+                onClick={() =>
+                  void runLink(pendingLink.action, pendingLink.skill, pendingLink.root, true)
+                }
+              >
+                Proceed
+                <span className="sr-only">
+                  {' '}
+                  with {pendingLink.action} {pendingLink.skill} at {pendingLink.root.label}
+                </span>
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setPendingLink(null)}>
+                Cancel
+              </Button>
+            </div>
           </Banner>
         )}
         {rootErrors.length > 0 && (
@@ -187,6 +262,8 @@ export default function App() {
                           root={root}
                           skill={skill}
                           adopting={adopting}
+                          linking={linking}
+                          onLink={runLink}
                           onChoose={(name, path) =>
                             void runAdopt(name, () => InventoryService.ChooseCanonical(name, path))
                           }
@@ -258,60 +335,101 @@ function adoptBlocker(skill: Skill, roots: Root[]): string | null {
   return inReadOnlyRoot ? 'A loose copy sits in a read-only root' : null
 }
 
+type LinkAction = 'enable' | 'disable'
+
+// linkKey identifies the one in-flight write, so only its cell shows busy.
+function linkKey(action: LinkAction, name: string, root: Root): string {
+  return `${action}:${name}:${root.path}`
+}
+
+type PendingLink = {
+  action: LinkAction
+  skill: string
+  root: Root
+  warnings: string[]
+}
+
 function StateGlyph({
   cell,
   root,
   skill,
   adopting,
+  linking,
+  onLink,
   onChoose,
 }: {
   cell: Cell | undefined
   root: Root
   skill: Skill
   adopting: string | null
+  linking: string | null
+  onLink: (action: LinkAction, name: string, root: Root) => void
   onChoose: (name: string, path: string) => void
 }) {
   const state = cell?.state ?? State.Absent
   const conflict = cell?.conflict === true
-  const name = conflict
+  const status = conflict
     ? `${skill.name} at ${root.label}: conflicting copy at ${cell?.path}`
     : `${skill.name} at ${root.label}: ${stateLabel(state)}${root.linkable ? '' : ', read-only root'}`
   const chooseable = skill.status === Status.StatusVariant && state === State.Loose && root.linkable && cell?.path
+  // The cell is the control (ADR-0004): absent enables, linked disables. A
+  // read-only, conflicting, or not-yet-adopted cell has no write affordance.
+  const action: LinkAction | null =
+    conflict || !root.linkable
+      ? null
+      : state === State.Absent && skill.stored
+        ? 'enable'
+        : state === State.Enabled
+          ? 'disable'
+          : null
+
+  const mark = conflict ? (
+    <span className="grid size-4 place-items-center border border-destructive text-destructive">
+      <AlertTriangle className="size-2.5" />
+    </span>
+  ) : (
+    <>
+      {state === State.Enabled && (
+        <span className="grid size-4 place-items-center bg-primary text-primary-foreground">
+          <Check className="size-3" strokeWidth={3} />
+        </span>
+      )}
+      {state === State.Loose && <span className="block size-2.5 rotate-45 border border-foreground/70" />}
+      {state === State.Absent && <span className="block h-px w-3 bg-border" />}
+      {state === State.Orphan && (
+        <span className="grid size-4 place-items-center border border-dashed border-destructive text-destructive">
+          <Link2Off className="size-2.5" />
+        </span>
+      )}
+    </>
+  )
 
   return (
     <span className="inline-flex flex-col items-center">
-      <span
-        className="inline-flex size-5 items-center justify-center"
-        title={cell?.path || undefined}
-        data-state={state}
-        data-conflict={conflict || undefined}
-      >
-        <span aria-hidden="true">
-          {conflict ? (
-            <span className="grid size-4 place-items-center border border-destructive text-destructive">
-              <AlertTriangle className="size-2.5" />
-            </span>
-          ) : (
-            <>
-              {state === State.Enabled && (
-                <span className="grid size-4 place-items-center bg-primary text-primary-foreground">
-                  <Check className="size-3" strokeWidth={3} />
-                </span>
-              )}
-              {state === State.Loose && (
-                <span className="block size-2.5 rotate-45 border border-foreground/70" />
-              )}
-              {state === State.Absent && <span className="block h-px w-3 bg-border" />}
-              {state === State.Orphan && (
-                <span className="grid size-4 place-items-center border border-dashed border-destructive text-destructive">
-                  <Link2Off className="size-2.5" />
-                </span>
-              )}
-            </>
-          )}
+      {action ? (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          title={cell?.path || undefined}
+          aria-label={`${action === 'enable' ? 'Enable' : 'Disable'} ${skill.name} at ${root.label}`}
+          aria-busy={linking === linkKey(action, skill.name, root)}
+          disabled={linking !== null}
+          data-state={state}
+          onClick={() => onLink(action, skill.name, root)}
+        >
+          <span aria-hidden="true">{mark}</span>
+        </Button>
+      ) : (
+        <span
+          className="inline-flex size-5 items-center justify-center"
+          title={cell?.path || undefined}
+          data-state={state}
+          data-conflict={conflict || undefined}
+        >
+          <span aria-hidden="true">{mark}</span>
+          <span className="sr-only">{status}</span>
         </span>
-        <span className="sr-only">{name}</span>
-      </span>
+      )}
       {conflict && (
         <span className="mt-1 block max-w-36 break-all font-mono text-[9px] leading-tight text-destructive">
           {cell?.path}
@@ -322,7 +440,7 @@ function StateGlyph({
           variant="outline"
           size="sm"
           className="mt-1 h-6 px-2 text-[10px]"
-          disabled={adopting !== null}
+          disabled={adopting !== null || linking !== null}
           onClick={() => onChoose(skill.name, cell.path)}
         >
           Use this copy

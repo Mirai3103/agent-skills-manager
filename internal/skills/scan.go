@@ -34,7 +34,7 @@ func Scan(home string, adapters []Adapter) Inventory {
 		}
 
 		index := len(inv.Roots)
-		inv.Roots = append(inv.Roots, spec.Root)
+		inv.Roots = append(inv.Roots, spec)
 
 		entries, err := scanRoot(spec)
 		if err != nil {
@@ -61,17 +61,11 @@ func Scan(home string, adapters []Adapter) Inventory {
 	return inv
 }
 
-// rootSpec is a Root plus the depth its skills sit at.
-type rootSpec struct {
-	Root
-	depth int
-}
-
 // rootSpecs inverts the adapters' claims: one root per unique claim path, with
 // every claiming agent as a Reader. This is the only reader map in the code.
-func rootSpecs(home string, adapters []Adapter) []rootSpec {
+func rootSpecs(home string, adapters []Adapter) []Root {
 	seen := make(map[string]int)
-	var specs []rootSpec
+	var specs []Root
 	for _, adapter := range adapters {
 		for _, claim := range adapter.Claims {
 			if i, ok := seen[claim.Root]; ok {
@@ -81,14 +75,12 @@ func rootSpecs(home string, adapters []Adapter) []rootSpec {
 				continue
 			}
 			seen[claim.Root] = len(specs)
-			specs = append(specs, rootSpec{
-				Root: Root{
-					Path:     filepath.Join(home, filepath.FromSlash(claim.Root)),
-					Label:    "~/" + filepath.ToSlash(claim.Root),
-					Readers:  []string{adapter.Agent},
-					Linkable: claim.Linkable,
-				},
-				depth: claim.Depth,
+			specs = append(specs, Root{
+				Path:     filepath.Join(home, filepath.FromSlash(claim.Root)),
+				Label:    "~/" + filepath.ToSlash(claim.Root),
+				Readers:  []string{adapter.Agent},
+				Linkable: claim.Linkable,
+				depth:    claim.Depth,
 			})
 		}
 	}
@@ -111,7 +103,7 @@ type entry struct {
 	stored bool
 }
 
-func scanRoot(spec rootSpec) ([]entry, error) {
+func scanRoot(spec Root) ([]entry, error) {
 	if spec.depth < 2 {
 		return scanDir(spec.Path)
 	}

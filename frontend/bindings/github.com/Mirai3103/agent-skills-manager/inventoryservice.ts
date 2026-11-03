@@ -31,6 +31,22 @@ export function ChooseCanonical(name: string, chosen: string): $CancellablePromi
 }
 
 /**
+ * Disable removes the link at one skills root and leaves the store untouched.
+ * It warns, and writes nothing, until the caller confirms.
+ */
+export function Disable(name: string, root: string, confirm: boolean): $CancellablePromise<skills$0.LinkResult> {
+    return $Call.ByID(389245239, name, root, confirm);
+}
+
+/**
+ * Enable links a stored skill into one skills root. It writes nothing and
+ * returns the warnings until the caller repeats the call with confirm=true.
+ */
+export function Enable(name: string, root: string, confirm: boolean): $CancellablePromise<skills$0.LinkResult> {
+    return $Call.ByID(2170098066, name, root, confirm);
+}
+
+/**
  * Scan returns the inventory of every skills root that exists under $HOME.
  */
 export function Scan(): $CancellablePromise<skills$0.Inventory> {

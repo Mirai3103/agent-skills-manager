@@ -33,6 +33,10 @@ type Root struct {
 	Label    string   `json:"label"`
 	Readers  []string `json:"readers"`
 	Linkable bool     `json:"linkable"`
+	// depth is how far below Path a skill directory sits: 1 for
+	// <root>/<skill>, 2 for <root>/<account>/<skill>. Unexported because the
+	// UI never needs it; a write does, to refuse a layout it cannot address.
+	depth int
 }
 
 // Cell is one skill's state at one root.

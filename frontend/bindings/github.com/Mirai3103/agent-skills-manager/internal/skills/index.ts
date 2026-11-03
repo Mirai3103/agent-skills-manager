@@ -10,6 +10,7 @@ export type {
     AdoptResult,
     Cell,
     Inventory,
+    LinkResult,
     Root,
     RootError,
     Skill

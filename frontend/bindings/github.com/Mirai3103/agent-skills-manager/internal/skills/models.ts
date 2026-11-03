@@ -34,6 +34,15 @@ export interface Inventory {
 }
 
 /**
+ * LinkResult reports what one Enable or Disable call changed. Path is the link
+ * written or removed; it is empty when the call only produced warnings.
+ */
+export interface LinkResult {
+    "path": string;
+    "warnings": string[] | null;
+}
+
+/**
  * Root is a skills root: the toggleable unit, not the agent (ADR-0004).
  */
 export interface Root {

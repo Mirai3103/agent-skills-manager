@@ -30,3 +30,15 @@ func (s *InventoryService) Adopt(name string) (skills.AdoptResult, error) {
 func (s *InventoryService) ChooseCanonical(name, chosen string) (skills.AdoptResult, error) {
 	return skills.ChooseCanonical(s.home, name, chosen, skills.DefaultAdapters())
 }
+
+// Enable links a stored skill into one skills root. It writes nothing and
+// returns the warnings until the caller repeats the call with confirm=true.
+func (s *InventoryService) Enable(name, root string, confirm bool) (skills.LinkResult, error) {
+	return skills.Enable(s.home, name, root, confirm, skills.DefaultAdapters())
+}
+
+// Disable removes the link at one skills root and leaves the store untouched.
+// It warns, and writes nothing, until the caller confirms.
+func (s *InventoryService) Disable(name, root string, confirm bool) (skills.LinkResult, error) {
+	return skills.Disable(s.home, name, root, confirm, skills.DefaultAdapters())
+}
