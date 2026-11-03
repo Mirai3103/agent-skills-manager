@@ -40,7 +40,7 @@ Two or more skills in different roots whose `SKILL.md` byte hash is equal. Dupli
 
 ## Variant
 
-Two or more skills sharing a folder name but differing in `SKILL.md` hash. Not safe to collapse — a human decides which one is canonical.
+Two or more skills in different roots sharing a folder name but differing in `SKILL.md` hash. The *Skill store* is not a root: a store copy that differs from the roots is a conflict shown as a warning, not a Variant. Not safe to collapse — a human decides which one is canonical.
 
 ## Adapter
 

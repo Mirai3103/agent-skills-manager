@@ -14,6 +14,14 @@ Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents
 
 ## Engineering
 
+### Checks
+
+`./scripts/check.sh` is the one command a change must pass; CI and the pre-commit hook run exactly it. Enable the hook once per clone: `git config core.hooksPath .githooks`.
+
+### UI
+
+Run the app against a sandbox `$HOME` and verify the matrix in a browser; `docs/agents/smoke.md` has the commands. A compiled `dist` is embedded in the binary, so rebuild the frontend before rebuilding it.
+
 ### UI components
 
 Add UI primitives with the CLI: `npx shadcn@latest add <component>`. It writes into `frontend/src/components/ui/` against this project's `base-lyra` preset and base-ui base, so the files stay diffable against the registry (`--dry-run`, `--diff` for updates). Hand-edit a registered component only when the generated output breaks a rule, and name the rule in the change.
@@ -32,4 +40,4 @@ Tests build their fixtures in `t.TempDir()` and assert on resulting filesystem s
 
 ### Generated files
 
-`frontend/bindings/**` is generated. After changing a Go service the frontend calls, run `task generate:bindings`.
+`frontend/bindings/**` is generated. After changing a Go service the frontend calls, regenerate with `wails3 generate bindings -f '' -clean=true -ts -i` (what `task generate:bindings` runs, when `task` is installed).
