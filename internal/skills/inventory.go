@@ -41,14 +41,18 @@ type Cell struct {
 
 // Skill is one row of the matrix.
 type Skill struct {
-	Name    string `json:"name"`
-	Hash    string `json:"hash"`
-	Status  Status `json:"status"`
+	Name   string `json:"name"`
+	Hash   string `json:"hash"`
+	Status Status `json:"status"`
+	// Stored reports whether a copy lives in the Skill store. A store-only
+	// skill keeps its row with every cell Absent: installed, disabled everywhere.
+	Stored  bool   `json:"stored"`
 	Warning string `json:"warning"`
 	Cells   []Cell `json:"cells"`
 }
 
-// RootError reports one unreadable root without failing the whole scan.
+// RootError reports one unreadable root (or the store) without failing the
+// whole scan.
 type RootError struct {
 	Root string `json:"root"`
 	Err  string `json:"err"`

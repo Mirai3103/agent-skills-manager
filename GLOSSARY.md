@@ -76,7 +76,7 @@ A link whose store entry no longer exists. Reported, never silently deleted.
 
 ## Scan
 
-A read-only traversal of the detected skills roots that produces the inventory. Scanning never mutates anything.
+A read-only traversal of the detected skills roots and the *Skill store* that produces the inventory. Scanning never mutates anything.
 
 ## Non-goals (v1)
 

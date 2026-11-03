@@ -18,3 +18,9 @@ func NewInventoryService(home string) *InventoryService {
 func (s *InventoryService) Scan() skills.Inventory {
 	return skills.Scan(s.home, skills.DefaultAdapters())
 }
+
+// Adopt copies a loose skill into the store and replaces every loose original
+// with a relative link into it. It only ever runs on an explicit user action.
+func (s *InventoryService) Adopt(name string) (skills.AdoptResult, error) {
+	return skills.Adopt(s.home, name, skills.DefaultAdapters())
+}

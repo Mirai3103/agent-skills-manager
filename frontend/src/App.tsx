@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { AlertTriangle, Check, Link2Off, Lock, RefreshCw } from 'lucide-react'
+import { AlertTriangle, ArchiveRestore, Check, Link2Off, Lock, RefreshCw } from 'lucide-react'
 import { InventoryService } from '../bindings/github.com/Mirai3103/agent-skills-manager'
 import {
   State,
@@ -24,6 +24,8 @@ export default function App() {
   const [inventory, setInventory] = useState<Inventory | null>(null)
   const [loading, setLoading] = useState(true)
   const [scanError, setScanError] = useState<string | null>(null)
+  const [adopting, setAdopting] = useState<string | null>(null)
+  const [adoptError, setAdoptError] = useState<string | null>(null)
 
   const scan = useCallback(async () => {
     setLoading(true)
@@ -36,6 +38,23 @@ export default function App() {
       setLoading(false)
     }
   }, [])
+
+  const adopt = useCallback(
+    async (name: string) => {
+      setAdopting(name)
+      setAdoptError(null)
+      try {
+        await InventoryService.Adopt(name)
+      } catch (err) {
+        setAdoptError(`${name}: ${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        setAdopting(null)
+        // Rescan either way: a reported failure may still have changed disk.
+        await scan()
+      }
+    },
+    [scan],
+  )
 
   useEffect(() => {
     void scan()
@@ -73,6 +92,11 @@ export default function App() {
             {scanError}
           </Banner>
         )}
+        {adoptError && (
+          <Banner tone="error" title="Adopt failed">
+            {adoptError}
+          </Banner>
+        )}
         {rootErrors.length > 0 && (
           <Banner tone="warning" title="Some roots could not be read">
             <ul className="list-inside list-disc">
@@ -89,7 +113,7 @@ export default function App() {
           <p className="py-12 text-center text-sm text-muted-foreground" role="status">
             {loading ? 'Scanning skills roots…' : 'Nothing scanned yet.'}
           </p>
-        ) : roots.length === 0 ? (
+        ) : roots.length === 0 && skills.length === 0 ? (
           <p className="py-12 text-center text-sm text-muted-foreground" role="status">
             No skills roots found under your home directory.
           </p>
@@ -136,6 +160,17 @@ export default function App() {
                           {skill.warning}
                         </span>
                       )}
+                      {skill.stored && (
+                        <Badge variant="outline" className="mt-1 text-[10px]">
+                          in store
+                        </Badge>
+                      )}
+                      <AdoptControl
+                        skill={skill}
+                        roots={roots}
+                        adopting={adopting}
+                        onAdopt={adopt}
+                      />
                     </TableHead>
                     {roots.map((root, index) => (
                       <TableCell
@@ -165,6 +200,49 @@ export default function App() {
       </div>
     </main>
   )
+}
+
+function AdoptControl({
+  skill,
+  roots,
+  adopting,
+  onAdopt,
+}: {
+  skill: Skill
+  roots: Root[]
+  adopting: string | null
+  onAdopt: (name: string) => void
+}) {
+  // Offered only where a real copy sits in a root. Store-only rows have none.
+  const loose = (skill.cells ?? []).some((cell) => cell.state === State.Loose)
+  if (!loose) return null
+
+  const blocker = adoptBlocker(skill, roots)
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="mt-2"
+      disabled={blocker !== null || adopting !== null}
+      title={blocker ?? undefined}
+      onClick={() => onAdopt(skill.name)}
+    >
+      <ArchiveRestore aria-hidden="true" />
+      {adopting === skill.name ? 'Adopting…' : 'Adopt'}
+      <span className="sr-only"> {skill.name}</span>
+    </Button>
+  )
+}
+
+// adoptBlocker disables the obvious refusals; the backend remains the authority.
+function adoptBlocker(skill: Skill, roots: Root[]): string | null {
+  if (skill.status === Status.StatusVariant) {
+    return 'Pick the canonical copy before adopting'
+  }
+  const inReadOnlyRoot = (skill.cells ?? []).some(
+    (cell, index) => cell.state === State.Loose && !roots[index]?.linkable,
+  )
+  return inReadOnlyRoot ? 'A loose copy sits in a read-only root' : null
 }
 
 function StateGlyph({

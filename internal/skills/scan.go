@@ -10,8 +10,9 @@ import (
 )
 
 // Scan is a read-only traversal of every skills root under home that exists on
-// disk. Missing roots contribute no column; an unreadable root reports a
-// RootError and leaves the rest of the inventory intact.
+// disk, plus the store. Missing roots contribute no column; an unreadable root
+// reports a RootError and leaves the rest of the inventory intact. Store skills
+// add rows but no column, so a store-only skill lists with every cell Absent.
 func Scan(home string, adapters []Adapter) Inventory {
 	inv := Inventory{
 		Roots:  []Root{},
@@ -44,6 +45,17 @@ func Scan(home string, adapters []Adapter) Inventory {
 		}
 		found = append(found, entries...)
 	}
+
+	// The store is not a skills root, so it adds rows but no column: a skill
+	// that lives only there shows up with every cell Absent.
+	storeEntries, err := scanDir(StoreDir(home))
+	if err != nil && !os.IsNotExist(err) {
+		inv.Errors = append(inv.Errors, RootError{Root: "~/.agent-skills/store", Err: err.Error()})
+	}
+	for i := range storeEntries {
+		storeEntries[i].stored = true
+	}
+	found = append(found, storeEntries...)
 
 	inv.Skills = buildSkills(found, len(inv.Roots))
 	return inv
@@ -86,7 +98,8 @@ func rootSpecs(home string, adapters []Adapter) []rootSpec {
 	return specs
 }
 
-// entry is one skill discovered at one root, before rows are assembled.
+// entry is one skill discovered at one root or in the store, before rows are
+// assembled.
 type entry struct {
 	root   int
 	name   string
@@ -94,6 +107,8 @@ type entry struct {
 	hash   string
 	fmName string
 	path   string
+	// stored marks a skill found in the store rather than in a skills root.
+	stored bool
 }
 
 func scanRoot(spec rootSpec) ([]entry, error) {
@@ -200,10 +215,12 @@ func frontmatterName(content []byte) string {
 // buildSkills collapses entries into one row per skill name, dense over roots.
 func buildSkills(entries []entry, rootCount int) []Skill {
 	type row struct {
-		cells   []Cell
-		hashes  map[string]struct{}
-		roots   map[int]struct{} // roots already holding a copy
-		warning string
+		cells     []Cell
+		hashes    map[string]struct{}
+		roots     map[int]struct{} // roots already holding a copy
+		warning   string
+		stored    bool
+		storeHash string
 	}
 	rows := make(map[string]*row)
 	names := make([]string, 0, len(entries))
@@ -222,11 +239,18 @@ func buildSkills(entries []entry, rootCount int) []Skill {
 			rows[e.name] = r
 			names = append(names, e.name)
 		}
-		if e.hash != "" {
-			r.hashes[e.hash] = struct{}{}
-		}
 		if r.warning == "" && e.fmName != "" && e.fmName != e.name {
 			r.warning = `frontmatter name "` + e.fmName + `" differs from folder name "` + e.name + `"`
+		}
+		// The store is not a root: its hash never makes a row a Variant, which
+		// means "the roots disagree". A store conflict surfaces as a warning.
+		if e.stored {
+			r.stored = true
+			r.storeHash = e.hash
+			continue
+		}
+		if e.hash != "" {
+			r.hashes[e.hash] = struct{}{}
 		}
 		// shortcut: one cell per root, so a name held twice under the depth-2
 		// root shows its first copy; split cells per account when a real root
@@ -242,11 +266,18 @@ func buildSkills(entries []entry, rootCount int) []Skill {
 	skills := make([]Skill, 0, len(names))
 	for _, name := range names {
 		r := rows[name]
-		skill := Skill{Name: name, Status: StatusSingle, Warning: r.warning, Cells: r.cells}
-		if len(r.hashes) == 1 {
+		skill := Skill{Name: name, Status: StatusSingle, Stored: r.stored, Warning: r.warning, Cells: r.cells}
+		switch {
+		case len(r.hashes) == 1:
 			for hash := range r.hashes {
 				skill.Hash = hash
 			}
+			if r.storeHash != "" && r.storeHash != skill.Hash && skill.Warning == "" {
+				skill.Warning = "the store copy differs from the skills roots; resolve the copies by hand"
+			}
+		case len(r.hashes) == 0:
+			// Store-only rows carry the store copy's hash.
+			skill.Hash = r.storeHash
 		}
 
 		switch {

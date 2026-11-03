@@ -15,6 +15,14 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as skills$0 from "./internal/skills/models.js";
 
 /**
+ * Adopt copies a loose skill into the store and replaces every loose original
+ * with a relative link into it. It only ever runs on an explicit user action.
+ */
+export function Adopt(name: string): $CancellablePromise<skills$0.AdoptResult> {
+    return $Call.ByID(4212653557, name);
+}
+
+/**
  * Scan returns the inventory of every skills root that exists under $HOME.
  */
 export function Scan(): $CancellablePromise<skills$0.Inventory> {

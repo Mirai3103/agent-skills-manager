@@ -20,7 +20,7 @@ ADR-0001 fixed the model (store + relative links, link presence = enabled). It l
 ## Consequences
 
 - Someone who edits `SKILL.md` by hand changes every agent at once — intended, but the UI should show the hash so a surprise change is visible.
-- Adopt is not atomic across several roots: a crash between two link replacements leaves some roots linked and some not. A *Scan* still reports the truth, so recovery is re-running adopt, not a transaction log.
+- Adopt is not atomic across several roots: a crash between two link replacements leaves some roots linked and some not. A *Scan* still reports the truth, so recovery is re-running adopt, not a transaction log. A crash between moving an original aside and linking it leaves `<name>.adopt-old` beside the absent skill: rename it back, then adopt again.
 - Refusing to adopt while a Variant exists means the user sometimes has to resolve a conflict before getting any value out of the tool. Cheaper than a staging concept nobody asked for.
 - Hashing on every scan is O(skill bytes). Revisit with a cache only if a real inventory feels slow.
 
