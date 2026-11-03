@@ -31,6 +31,12 @@ export interface Inventory {
     "roots": Root[] | null;
     "skills": Skill[] | null;
     "errors": RootError[] | null;
+
+    /**
+     * WatchError is set by the app edge when live refresh failed. Scan always
+     * leaves it empty: nothing in the matrix depends on the watcher.
+     */
+    "watchError": string;
 }
 
 /**

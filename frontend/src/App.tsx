@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Trash2,
 } from 'lucide-react'
+import { Events } from '@wailsio/runtime'
 import { InventoryService } from '../bindings/github.com/Mirai3103/agent-skills-manager'
 import {
   State,
@@ -150,6 +151,16 @@ export default function App() {
     void scan()
   }, [scan])
 
+  // Live refresh: the backend watches the roots and the store, collapses a
+  // burst into one event, and sends the freshly scanned inventory. A missed
+  // event only leaves the matrix stale; Rescan still works.
+  useEffect(() => {
+    return Events.On('inventory:changed', (event) => {
+      setInventory(event.data as Inventory)
+      setScanError(null)
+    })
+  }, [])
+
   const roots = inventory?.roots ?? []
   const skills = inventory?.skills ?? []
   const rootErrors = inventory?.errors ?? []
@@ -200,6 +211,11 @@ export default function App() {
         {scanError && (
           <Banner tone="error" title="Scan failed">
             {scanError}
+          </Banner>
+        )}
+        {inventory?.watchError && (
+          <Banner tone="error" title="Live refresh unavailable">
+            {inventory.watchError} — Rescan is how the matrix stays current.
           </Banner>
         )}
         {adoptError && (

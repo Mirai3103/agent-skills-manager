@@ -1,10 +1,30 @@
 package main
 
-import "github.com/Mirai3103/agent-skills-manager/internal/skills"
+import (
+	"context"
+	"sync"
+	"time"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
+
+	"github.com/Mirai3103/agent-skills-manager/internal/skills"
+)
+
+// inventoryEvent tells the frontend a fresh inventory is available. The event
+// carries the inventory itself, so a refresh costs no extra round trip.
+const inventoryEvent = "inventory:changed"
+
+// watchQuiet is how long a burst of filesystem changes must stay silent before
+// the matrix refreshes. A skill copy is several writes; one refresh per burst.
+const watchQuiet = 300 * time.Millisecond
 
 // InventoryService exposes the read-only skill inventory to the frontend.
 type InventoryService struct {
 	home string
+
+	mu       sync.Mutex
+	watchErr string
+	watcher  *skills.Watcher
 }
 
 // NewInventoryService resolves $HOME once, at the app edge, and hands it to the
@@ -14,9 +34,73 @@ func NewInventoryService(home string) *InventoryService {
 	return &InventoryService{home: home}
 }
 
+// ServiceStartup begins watching the skills roots and the store. A watcher that
+// will not start is reported, not fatal: Rescan is the whole story then.
+func (s *InventoryService) ServiceStartup(_ context.Context, _ application.ServiceOptions) error {
+	watcher, err := skills.NewWatcher(
+		skills.WatchDirs(s.home, skills.DefaultAdapters()),
+		watchQuiet,
+		func() []string {
+			s.emit()
+			return skills.WatchDirs(s.home, skills.DefaultAdapters())
+		},
+		s.watchFailed,
+	)
+	if err != nil {
+		s.watchFailed(err)
+		return nil
+	}
+	s.mu.Lock()
+	s.watcher = watcher
+	s.mu.Unlock()
+	return nil
+}
+
+// ServiceShutdown stops watching files.
+func (s *InventoryService) ServiceShutdown() error {
+	s.mu.Lock()
+	watcher := s.watcher
+	s.mu.Unlock()
+	if watcher != nil {
+		watcher.Close()
+	}
+	return nil
+}
+
 // Scan returns the inventory of every skills root that exists under $HOME.
 func (s *InventoryService) Scan() skills.Inventory {
-	return skills.Scan(s.home, skills.DefaultAdapters())
+	return s.inventory()
+}
+
+// inventory scans and stamps the watcher state, so the UI can say live refresh
+// is unavailable without a second call.
+func (s *InventoryService) inventory() skills.Inventory {
+	inv := skills.Scan(s.home, skills.DefaultAdapters())
+	s.mu.Lock()
+	inv.WatchError = s.watchErr
+	s.mu.Unlock()
+	return inv
+}
+
+// emit pushes a freshly scanned inventory to every open window.
+func (s *InventoryService) emit() {
+	if app := application.Get(); app != nil {
+		app.Event.Emit(inventoryEvent, s.inventory())
+	}
+}
+
+// watchFailed records the first watcher failure and pushes it to the UI. Later
+// failures change nothing, so a flapping watch does not spam the frontend.
+func (s *InventoryService) watchFailed(err error) {
+	s.mu.Lock()
+	first := s.watchErr == ""
+	if first {
+		s.watchErr = err.Error()
+	}
+	s.mu.Unlock()
+	if first {
+		s.emit()
+	}
 }
 
 // Adopt copies a loose skill into the store and replaces every loose original
@@ -46,10 +130,25 @@ func (s *InventoryService) Disable(name, root string, confirm bool) (skills.Link
 // AddExtraRoot registers a skills root the adapters do not know about. The root
 // may be missing; Scan reports that per root instead of failing.
 func (s *InventoryService) AddExtraRoot(path string) error {
-	return skills.AddExtraRoot(s.home, path)
+	err := skills.AddExtraRoot(s.home, path)
+	s.resync()
+	return err
 }
 
 // RemoveExtraRoot forgets a registered root and touches nothing on disk.
 func (s *InventoryService) RemoveExtraRoot(path string) error {
-	return skills.RemoveExtraRoot(s.home, path)
+	err := skills.RemoveExtraRoot(s.home, path)
+	s.resync()
+	return err
+}
+
+// resync makes the watcher follow the roots the config now names. Without it a
+// root added this session stays unwatched until an unrelated event refreshes.
+func (s *InventoryService) resync() {
+	s.mu.Lock()
+	watcher := s.watcher
+	s.mu.Unlock()
+	if watcher != nil {
+		watcher.Sync(skills.WatchDirs(s.home, skills.DefaultAdapters()))
+	}
 }

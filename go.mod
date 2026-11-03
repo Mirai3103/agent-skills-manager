@@ -2,7 +2,10 @@ module github.com/Mirai3103/agent-skills-manager
 
 go 1.26.0
 
-require github.com/wailsapp/wails/v3 v3.0.0
+require (
+	github.com/fsnotify/fsnotify v1.10.1
+	github.com/wailsapp/wails/v3 v3.0.0
+)
 
 require (
 	github.com/adrg/xdg v0.5.3 // indirect

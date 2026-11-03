@@ -77,4 +77,7 @@ type Inventory struct {
 	Roots  []Root      `json:"roots"`
 	Skills []Skill     `json:"skills"`
 	Errors []RootError `json:"errors"`
+	// WatchError is set by the app edge when live refresh failed. Scan always
+	// leaves it empty: nothing in the matrix depends on the watcher.
+	WatchError string `json:"watchError"`
 }
