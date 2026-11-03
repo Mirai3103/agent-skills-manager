@@ -72,7 +72,7 @@ One agent seeing the same *Skill* through two roots. Warned before it happens: C
 
 ## Root override
 
-A skills root the user adds by hand through `~/.agent-skills/config.json`, because no adapter knows about it. The only thing the app persists.
+A skills root the user registers in the app, because no adapter knows about it. It persists in `~/.agent-skills/config.json`, the only thing the app persists.
 
 ## Orphan link
 

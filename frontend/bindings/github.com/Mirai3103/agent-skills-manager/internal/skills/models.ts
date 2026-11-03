@@ -50,6 +50,13 @@ export interface Root {
     "label": string;
     "readers": string[] | null;
     "linkable": boolean;
+
+    /**
+     * Extra marks a root the user registered in config.json. It is the only
+     * root kind the user can remove; it may also be true for an adapter root
+     * the same override names.
+     */
+    "extra": boolean;
 }
 
 /**

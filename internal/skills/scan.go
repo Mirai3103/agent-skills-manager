@@ -3,6 +3,7 @@ package skills
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -10,9 +11,10 @@ import (
 )
 
 // Scan is a read-only traversal of every skills root under home that exists on
-// disk, plus the store. Missing roots contribute no column; an unreadable root
-// reports a RootError and leaves the rest of the inventory intact. Store skills
-// add rows but no column, so a store-only skill lists with every cell Absent.
+// disk, plus the store. Missing adapter roots contribute no column; a missing or
+// unreadable registered extra root keeps its column and reports a RootError. An
+// unreadable root never fails the scan. Store skills add rows but no column, so
+// a store-only skill lists with every cell Absent.
 func Scan(home string, adapters []Adapter) Inventory {
 	inv := Inventory{
 		Roots:  []Root{},
@@ -20,16 +22,31 @@ func Scan(home string, adapters []Adapter) Inventory {
 		Errors: []RootError{},
 	}
 
+	extras, configErrors := ExtraRoots(home)
+	inv.Errors = append(inv.Errors, configErrors...)
+
 	var found []entry
-	for _, spec := range rootSpecs(home, adapters) {
+	for _, spec := range rootSpecs(home, adapters, extras) {
 		info, err := os.Stat(spec.Path)
+		if err == nil && !info.IsDir() {
+			if !spec.Extra {
+				continue
+			}
+			err = errors.New("not a directory")
+		}
 		if err != nil {
-			if !os.IsNotExist(err) {
+			// A registered extra root is the user's explicit claim, so it keeps
+			// its column and reports why it is empty; an adapter root that is
+			// not installed contributes nothing.
+			if spec.Extra {
+				// An absent root cannot take a link, so the column must not
+				// offer a write that is guaranteed to fail.
+				spec.Linkable = false
+				inv.Roots = append(inv.Roots, spec)
+				inv.Errors = append(inv.Errors, RootError{Root: spec.Label, Err: err.Error()})
+			} else if !os.IsNotExist(err) {
 				inv.Errors = append(inv.Errors, RootError{Root: spec.Label, Err: err.Error()})
 			}
-			continue
-		}
-		if !info.IsDir() {
 			continue
 		}
 
@@ -38,6 +55,8 @@ func Scan(home string, adapters []Adapter) Inventory {
 
 		entries, err := scanRoot(spec)
 		if err != nil {
+			// A root we cannot read is not one we may write either.
+			inv.Roots[index].Linkable = false
 			inv.Errors = append(inv.Errors, RootError{Root: spec.Label, Err: err.Error()})
 		}
 		for i := range entries {
@@ -62,21 +81,23 @@ func Scan(home string, adapters []Adapter) Inventory {
 }
 
 // rootSpecs inverts the adapters' claims: one root per unique claim path, with
-// every claiming agent as a Reader. This is the only reader map in the code.
-func rootSpecs(home string, adapters []Adapter) []Root {
+// every claiming agent as a Reader. Extra roots are appended as unclaimed,
+// linkable columns. This is the only reader map in the code.
+func rootSpecs(home string, adapters []Adapter, extras []string) []Root {
 	seen := make(map[string]int)
 	var specs []Root
 	for _, adapter := range adapters {
 		for _, claim := range adapter.Claims {
-			if i, ok := seen[claim.Root]; ok {
+			path := filepath.Join(home, filepath.FromSlash(claim.Root))
+			if i, ok := seen[path]; ok {
 				specs[i].Readers = append(specs[i].Readers, adapter.Agent)
 				// A root the app may write must be linkable for every reader.
 				specs[i].Linkable = specs[i].Linkable && claim.Linkable
 				continue
 			}
-			seen[claim.Root] = len(specs)
+			seen[path] = len(specs)
 			specs = append(specs, Root{
-				Path:     filepath.Join(home, filepath.FromSlash(claim.Root)),
+				Path:     path,
 				Label:    "~/" + filepath.ToSlash(claim.Root),
 				Readers:  []string{adapter.Agent},
 				Linkable: claim.Linkable,
@@ -84,10 +105,36 @@ func rootSpecs(home string, adapters []Adapter) []Root {
 			})
 		}
 	}
+	for _, path := range extras {
+		if i, ok := seen[path]; ok {
+			// The override duplicates an adapter root, so it is the same column;
+			// mark it extra so the override can still be removed.
+			specs[i].Extra = true
+			continue
+		}
+		seen[path] = len(specs)
+		specs = append(specs, Root{
+			Path:     path,
+			Label:    rootLabel(home, path),
+			Readers:  []string{},
+			Linkable: true,
+			Extra:    true,
+			depth:    1,
+		})
+	}
 	for i := range specs {
 		sort.Strings(specs[i].Readers)
 	}
 	return specs
+}
+
+// rootLabel shows a path relative to home when it sits inside it.
+func rootLabel(home, path string) string {
+	rel, err := filepath.Rel(home, path)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return filepath.ToSlash(path)
+	}
+	return "~/" + filepath.ToSlash(rel)
 }
 
 // entry is one skill discovered at one root or in the store, before rows are

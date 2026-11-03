@@ -42,3 +42,14 @@ func (s *InventoryService) Enable(name, root string, confirm bool) (skills.LinkR
 func (s *InventoryService) Disable(name, root string, confirm bool) (skills.LinkResult, error) {
 	return skills.Disable(s.home, name, root, confirm, skills.DefaultAdapters())
 }
+
+// AddExtraRoot registers a skills root the adapters do not know about. The root
+// may be missing; Scan reports that per root instead of failing.
+func (s *InventoryService) AddExtraRoot(path string) error {
+	return skills.AddExtraRoot(s.home, path)
+}
+
+// RemoveExtraRoot forgets a registered root and touches nothing on disk.
+func (s *InventoryService) RemoveExtraRoot(path string) error {
+	return skills.RemoveExtraRoot(s.home, path)
+}

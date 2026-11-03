@@ -33,6 +33,10 @@ type Root struct {
 	Label    string   `json:"label"`
 	Readers  []string `json:"readers"`
 	Linkable bool     `json:"linkable"`
+	// Extra marks a root the user registered in config.json. It is the only
+	// root kind the user can remove; it may also be true for an adapter root
+	// the same override names.
+	Extra bool `json:"extra"`
 	// depth is how far below Path a skill directory sits: 1 for
 	// <root>/<skill>, 2 for <root>/<account>/<skill>. Unexported because the
 	// UI never needs it; a write does, to refuse a layout it cannot address.

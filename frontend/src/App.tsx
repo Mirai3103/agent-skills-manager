@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { AlertTriangle, ArchiveRestore, Check, Link2Off, Lock, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import {
+  AlertTriangle,
+  ArchiveRestore,
+  Check,
+  Link2Off,
+  Lock,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react'
 import { InventoryService } from '../bindings/github.com/Mirai3103/agent-skills-manager'
 import {
   State,
@@ -11,6 +20,7 @@ import {
 } from '../bindings/github.com/Mirai3103/agent-skills-manager/internal/skills/models'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Table,
   TableBody,
@@ -30,6 +40,9 @@ export default function App() {
   const [linking, setLinking] = useState<string | null>(null)
   const [linkError, setLinkError] = useState<string | null>(null)
   const [pendingLink, setPendingLink] = useState<PendingLink | null>(null)
+  const [newRoot, setNewRoot] = useState('')
+  const [rootBusy, setRootBusy] = useState(false)
+  const [rootError, setRootError] = useState<string | null>(null)
 
   const scan = useCallback(async () => {
     setLoading(true)
@@ -95,6 +108,44 @@ export default function App() {
     [scan],
   )
 
+  // addRoot registers one root override, then rescans so its column appears.
+  const addRoot = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      const path = newRoot.trim()
+      if (path === '') return
+      setRootBusy(true)
+      setRootError(null)
+      try {
+        await InventoryService.AddExtraRoot(path)
+        setNewRoot('')
+        await scan()
+      } catch (err) {
+        setRootError(`Add ${path}: ${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        setRootBusy(false)
+      }
+    },
+    [newRoot, scan],
+  )
+
+  // removeRoot forgets the override; the skills under it stay on disk.
+  const removeRoot = useCallback(
+    async (path: string) => {
+      setRootBusy(true)
+      setRootError(null)
+      try {
+        await InventoryService.RemoveExtraRoot(path)
+        await scan()
+      } catch (err) {
+        setRootError(`Remove ${path}: ${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        setRootBusy(false)
+      }
+    },
+    [scan],
+  )
+
   useEffect(() => {
     void scan()
   }, [scan])
@@ -112,17 +163,37 @@ export default function App() {
             {skills.length} skills · {roots.length} skills roots
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void scan()}
-          disabled={loading}
-          aria-busy={loading}
-          className="[--wails-draggable:no-drag]"
-        >
-          <RefreshCw className={cn(loading && 'animate-spin')} />
-          {loading ? 'Scanning…' : 'Rescan'}
-        </Button>
+        <div className="flex items-center gap-2 [--wails-draggable:no-drag]">
+          <form className="flex items-center gap-2" onSubmit={(event) => void addRoot(event)}>
+            <Input
+              value={newRoot}
+              onChange={(event) => setNewRoot(event.target.value)}
+              placeholder="/path/to/skills or ~/skills"
+              aria-label="Skills root to add"
+              className="w-64"
+              spellCheck={false}
+            />
+            <Button
+              type="submit"
+              variant="outline"
+              size="sm"
+              disabled={rootBusy || newRoot.trim() === ''}
+            >
+              <Plus aria-hidden="true" />
+              Add root
+            </Button>
+          </form>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void scan()}
+            disabled={loading}
+            aria-busy={loading}
+          >
+            <RefreshCw className={cn(loading && 'animate-spin')} />
+            {loading ? 'Scanning…' : 'Rescan'}
+          </Button>
+        </div>
       </header>
 
       <div className="flex flex-1 flex-col gap-3 px-6 py-4">
@@ -139,6 +210,11 @@ export default function App() {
         {linkError && (
           <Banner tone="error" title="Link change failed">
             {linkError}
+          </Banner>
+        )}
+        {rootError && (
+          <Banner tone="error" title="Extra root change failed">
+            {rootError}
           </Banner>
         )}
         {pendingLink && (
@@ -206,8 +282,27 @@ export default function App() {
                     <TableHead key={root.path} scope="col" className="min-w-32 align-top">
                       <span className="font-mono text-xs">{root.label}</span>
                       <span className="mt-0.5 block whitespace-normal text-[10px] leading-tight font-normal text-muted-foreground">
-                        {(root.readers ?? []).join(', ')}
+                        {(root.readers ?? []).length > 0
+                          ? (root.readers ?? []).join(', ')
+                          : 'no adapter claims this root'}
                       </span>
+                      {root.extra && (
+                        <span className="mt-1 flex items-center gap-1">
+                          <Badge variant="outline" className="text-[10px]">
+                            extra root
+                          </Badge>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            aria-label={`Remove extra root ${root.label}`}
+                            title="Forget this root. Nothing on disk changes."
+                            disabled={rootBusy}
+                            onClick={() => void removeRoot(root.path)}
+                          >
+                            <Trash2 aria-hidden="true" />
+                          </Button>
+                        </span>
+                      )}
                       {!root.linkable && (
                         <Badge variant="outline" className="mt-1 gap-1 text-[10px]">
                           <Lock aria-hidden="true" />

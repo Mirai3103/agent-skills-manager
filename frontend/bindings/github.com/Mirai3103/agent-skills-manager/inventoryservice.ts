@@ -15,6 +15,14 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as skills$0 from "./internal/skills/models.js";
 
 /**
+ * AddExtraRoot registers a skills root the adapters do not know about. The root
+ * may be missing; Scan reports that per root instead of failing.
+ */
+export function AddExtraRoot(path: string): $CancellablePromise<void> {
+    return $Call.ByID(3614483330, path);
+}
+
+/**
  * Adopt copies a loose skill into the store and replaces every loose original
  * with a relative link into it. It only ever runs on an explicit user action.
  */
@@ -44,6 +52,13 @@ export function Disable(name: string, root: string, confirm: boolean): $Cancella
  */
 export function Enable(name: string, root: string, confirm: boolean): $CancellablePromise<skills$0.LinkResult> {
     return $Call.ByID(2170098066, name, root, confirm);
+}
+
+/**
+ * RemoveExtraRoot forgets a registered root and touches nothing on disk.
+ */
+export function RemoveExtraRoot(path: string): $CancellablePromise<void> {
+    return $Call.ByID(4204999397, path);
 }
 
 /**

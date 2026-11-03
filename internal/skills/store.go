@@ -14,7 +14,7 @@ import (
 // StoreDir is the app-owned Skill store: one canonical copy per adopted skill
 // (ADR-0002). It is not a skills root and never becomes a matrix column.
 func StoreDir(home string) string {
-	return filepath.Join(home, ".agent-skills", "store")
+	return filepath.Join(appDir(home), "store")
 }
 
 // Suffixes for the short-lived siblings Adopt renames originals to, so a
