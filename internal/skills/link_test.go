@@ -164,6 +164,30 @@ func TestEnableAndDisableRefuseAReadOnlyRoot(t *testing.T) {
 	}
 }
 
+func TestEnableRefusesAColumnThatStillHoldsADifferingCopy(t *testing.T) {
+	home := fakeHome(t, "one/skills", "two/skills")
+	chosen := filepath.Join(home, "one/skills", "alpha")
+	loser := filepath.Join(home, "two/skills", "alpha")
+	losingSkill := alphaSkill + "\nlosing\n"
+	writeSkill(t, filepath.Join(home, "one/skills"), "alpha", alphaSkill)
+	writeSkill(t, filepath.Join(home, "two/skills"), "alpha", losingSkill)
+	adapters := adaptersFor("one/skills", "two/skills")
+	if _, err := ChooseCanonical(home, "alpha", chosen, adapters); err != nil {
+		t.Fatalf("ChooseCanonical: %v", err)
+	}
+
+	_, err := Enable(home, "alpha", filepath.Join(home, "two/skills"), false, adapters)
+	if err == nil {
+		t.Fatal("Enable overwrote a differing copy")
+	}
+	if !strings.Contains(err.Error(), loser) {
+		t.Errorf("error = %v, want the conflicting path named", err)
+	}
+	if content, err := os.ReadFile(filepath.Join(loser, "SKILL.md")); err != nil || string(content) != losingSkill {
+		t.Errorf("losing copy = %q, %v; want it untouched", content, err)
+	}
+}
+
 func TestEnableRefusesARootThatNestsItsSkills(t *testing.T) {
 	home := fakeHome(t, "synced/acct")
 	writeSkill(t, StoreDir(home), "alpha", alphaSkill)

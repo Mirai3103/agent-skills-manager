@@ -38,6 +38,9 @@ func Enable(home, name, root string, confirm bool, adapters []Adapter) (LinkResu
 	if !ok {
 		return LinkResult{}, fmt.Errorf("no skill named %q", name)
 	}
+	if cell := skill.Cells[index]; cell.Conflict {
+		return LinkResult{}, fmt.Errorf("cannot enable %q: %s still holds a differing copy at %s; remove it by hand first", name, label, cell.Path)
+	}
 	switch cell := skill.Cells[index]; cell.State {
 	case Enabled:
 		return LinkResult{}, fmt.Errorf("%q is already enabled at %s", name, label)
