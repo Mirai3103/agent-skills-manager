@@ -11,3 +11,7 @@ build/android/overlay.json
 build/android/gen/
 /skills/
 __pycache__/
+/agent-skills-manager
+build/linux/*.desktop
+build/darwin/icons.icns
+build/windows/icon.ico
